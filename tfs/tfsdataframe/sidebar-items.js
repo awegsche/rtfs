@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["TfsDataFrame","The main struct of the crate. `TfsDataFrame` contains all the information of the loaded TFS file."]]});

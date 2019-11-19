@@ -1,0 +1,11 @@
+var N = null;var sourcesIndex = {};
+sourcesIndex["lazy_static"] = {"name":"","files":["inline_lazy.rs","lib.rs"]};
+sourcesIndex["num"] = {"name":"","files":["lib.rs"]};
+sourcesIndex["num_bigint"] = {"name":"","files":["algorithms.rs","bigint.rs","biguint.rs","lib.rs","macros.rs","monty.rs"]};
+sourcesIndex["num_complex"] = {"name":"","files":["cast.rs","lib.rs","pow.rs"]};
+sourcesIndex["num_integer"] = {"name":"","files":["lib.rs","roots.rs"]};
+sourcesIndex["num_iter"] = {"name":"","files":["lib.rs"]};
+sourcesIndex["num_rational"] = {"name":"","files":["lib.rs"]};
+sourcesIndex["num_traits"] = {"name":"","dirs":[{"name":"ops","files":["checked.rs","inv.rs","mod.rs","mul_add.rs","saturating.rs","wrapping.rs"]}],"files":["bounds.rs","cast.rs","float.rs","identities.rs","int.rs","lib.rs","macros.rs","pow.rs","real.rs","sign.rs"]};
+sourcesIndex["tfs"] = {"name":"","files":["dataframe.rs","join.rs","lib.rs","numerical.rs","tfsdataframe.rs"]};
+createSourceSidebar();

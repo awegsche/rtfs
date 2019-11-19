@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["DataValue",""],["DataVector","The columns of a data frame are stored in `DataVector`s."],["DataView",""],["Indexer","Helps deciding if we access by key (a valid String index has to be setup with `set_index`) or by an integer index"]],"trait":[["DataFrame","The necessary functions to implement for any DataFrame object."]]});

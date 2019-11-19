@@ -1,0 +1,10 @@
+var ALIASES = {};
+ALIASES["lazy_static"] = {};
+ALIASES["num"] = {};
+ALIASES["num_bigint"] = {};
+ALIASES["num_complex"] = {};
+ALIASES["num_integer"] = {};
+ALIASES["num_iter"] = {};
+ALIASES["num_rational"] = {};
+ALIASES["num_traits"] = {};
+ALIASES["tfs"] = {};
