@@ -97,19 +97,21 @@ impl TfsDataFrame {
     /// The index has to be set for [`loc`](#method.locd) to work.
     ///
     /// ```
-    /// let mut df = TfsDataFrame::open("test.tfs");
+    /// use tfs::{DataFrame, TfsDataFrame};
+    ///
+    /// let mut df = TfsDataFrame::open("test/test.tfs").expect("unable to open file");
     ///
     /// // works always, indexing using an integer, will acces the nth value according to the order
     /// // in the original file
-    /// let betx1 = df.locd["BETX", 0];
+    /// let betx1 = df.loc_real(0, "BETX").clone();
     ///
     /// // only after a first invocation of `set_index` access by the index will be possible
     /// df.set_index("NAME");
-    /// let betx2 = df.locd["BPM1", "BETX"];
+    /// let betx2 = df.loc_real("BPM1", "BETX").clone();
     ///
     /// assert_eq!(betx1, betx2);
     /// ```
-    pub fn set_index(&mut self, column: &str) {
+    pub fn set_index(&mut self, column: &str) -> &mut Self {
         self.index_str.clear();
         if let DataVector::TextVector(vec) = &self.columns[self.column_headers[column]] {
             for i in 0..vec.len() {
@@ -118,6 +120,7 @@ impl TfsDataFrame {
         } else {
             panic!("column not in the df");
         }
+        self
     }
 
     pub fn len(&self) -> usize {

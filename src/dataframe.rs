@@ -127,14 +127,6 @@ impl Into<String> for DataValue {
     }
 }
 
-/// TODO: replace with macro so that we can use
-/// ```
-/// impl_into!(f64);
-/// impl_into!(f32);
-/// impl_into!(i32);
-/// impl_into!(i64);
-/// // etc
-/// ```
 impl Into<f64> for DataValue {
     fn into(self) -> f64 {
         if let DataValue::Real(r) = self {
@@ -155,14 +147,6 @@ impl<'a> Into<&'a String> for DataView<'a> {
     }
 }
 
-/// TODO: replace with macro so that we can use
-/// ```
-/// impl_into!(f64);
-/// impl_into!(f32);
-/// impl_into!(i32);
-/// impl_into!(i64);
-/// // etc
-/// ```
 impl<'a> Into<&'a f64> for DataView<'a> {
     fn into(self) -> &'a f64 {
         if let DataView::Real(r) = self {
@@ -174,6 +158,7 @@ impl<'a> Into<&'a f64> for DataView<'a> {
 }
 
 /// The columns of a data frame are stored in `DataVector`s.
+#[derive(PartialEq)]
 pub enum DataVector {
     TextVector(Vec<String>),
     RealVector(Vec<f64>),
@@ -205,10 +190,16 @@ impl<'a> Add for &'a DataVector {
     /// Implementation for Addition of two `DataVector`s.
     /// Yields element-wise addition of the two Vectors if they are both `DataVector::RealVector`.
     /// ```
-    /// let a = DataVector::RealVector((0..100).iter().map(|i| i as f64).collect::Vec<f64>());
-    /// let b = DataVector::RealVector((0..100).iter().map(|_| 1.0).collect::Vec<f64>());
+    /// # use tfs::DataVector;
+    ///
+    /// let a = DataVector::RealVector((0..100).map(|i| i as f64).collect::<Vec<f64>>());
+    /// let b = DataVector::RealVector((0..100).map(|_| 1.0).collect::<Vec<f64>>());
     ///
     /// let c = &a + &b;
+    ///
+    /// let test_c = DataVector::RealVector((0..100).map(|i| i as f64 + 1.0).collect::<Vec<f64>>());
+    ///
+    /// assert_eq!(c, test_c);
     /// ```
     fn add(self, other: &'a DataVector) -> DataVector {
         if let &DataVector::RealVector(ref a) = self {
@@ -233,8 +224,10 @@ impl<'a> Sub for &'a DataVector {
 
     /// Implementation for Subtraction of two `DataVector`s.
     /// ```
-    /// let a = DataVector::RealVector((0..100).iter().map(|i| i as f64).collect::Vec<f64>());
-    /// let b = DataVector::RealVector((0..100).iter().map(|_| 1.0).collect::Vec<f64>());
+    /// use tfs::DataVector;
+    ///
+    /// let a = DataVector::RealVector((0..100).map(|i| i as f64).collect::<Vec<_>>());
+    /// let b = DataVector::RealVector((0..100).map(|_| 1.0).collect::<Vec<_>>());
     ///
     /// let c = &a - &b;
     /// ```
@@ -259,6 +252,29 @@ impl<'a> Sub for &'a DataVector {
         }
     }
 }
+
+impl Debug for DataVector {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            DataVector::RealVector(v) => {
+                write!(f, "RealVector[{}] {{ ", v.len())?;
+                for i in 0..v.len().min(5) {
+                    write!(f, "{}, ", v[i])?;
+                }
+                write!(f, "}}")?;
+            }
+            DataVector::TextVector(v) => {
+                write!(f, "TextVector[{}] {{ ", v.len())?;
+                for i in 0..v.len().min(5) {
+                    write!(f, "'{}', ", v[i])?;
+                }
+                write!(f, "}}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /*
 impl Iterator for (DataVector, DataVector) {
     type Item = (DataValue, DataValue);
