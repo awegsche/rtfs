@@ -4,6 +4,45 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
+/// The main struct of the crate. `TfsDataFrame` contains all the information of the loaded TFS file.
+///
+/// # TFS file structure
+///
+/// ## Properties
+///
+/// The first lines are a set of properties of the form
+///
+/// `
+/// @ PROPERTY_NAME <type-id> value
+/// `
+///
+/// where `<type-id>` is one of
+///
+/// | type id | type of data |
+/// | --- |--- |
+/// | `%le` | float |
+/// |  `%s`| string |    
+/// |  `%d`| int      |
+///
+///
+/// ## Header
+///
+/// The column header contains of two lines, the first giving the names of the columns and the second
+/// one the data types.
+///
+/// The column name row begins with an asterisk (`*`):
+///
+/// `* NAME POSITION col3 ...`
+///
+/// The data type row begins with a dollar symbol (`$`):
+///
+/// `$ %s %le ...`
+///
+/// ## Data
+///
+/// And finally, data rows just contain a whitespace separated list of the values for the respective columns.
+///
+/// ` ELEMENT1 0.0 ...`
 pub struct TfsDataFrame {
     columns: Vec<DataVector>,
     column_headers: HashMap<String, usize>,
@@ -15,7 +54,7 @@ pub struct TfsDataFrame {
 
 impl TfsDataFrame {
     /// Opens a tfs file and stores the conten in a TfsDataFrame. Will panic! if opening fails rather
-    /// than return a `Result<>`.
+    /// than return a `Result<>`.~
     pub fn open_expect<P>(path: P) -> TfsDataFrame
     where
         P: AsRef<Path>,
