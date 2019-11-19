@@ -2,8 +2,9 @@ use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Add, Div, Mul, Sub};
 
-/// The necessary functions to implement for any DataFrame object
-/// for now this includes:
+/// The necessary functions to implement for any DataFrame object.
+///
+/// For now this includes:
 /// * `col(colname)` to get the reference to a certain column
 /// * `loc(key, colname)` to get the reference to a certain cell
 pub trait DataFrame {
