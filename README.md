@@ -7,4 +7,8 @@
 [codecov-badge]: https://codecov.io/gh/awegsche/rtfs/branch/master/graph/badge.svg
 [codecov]: https://codecov.io/gh/awegsche/rtfs
 
-tfs file reader written in rust
+Tfs file reader written in rust.
+
+API reference with inline examples can be found in the docs.
+
+_TODO: add a small introduction_
