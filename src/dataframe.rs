@@ -1,24 +1,30 @@
+extern crate num_traits;
+
+use num_traits::Float;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Add, Div, Mul, Sub};
+
 
 /// The necessary functions to implement for any DataFrame object.
 ///
 /// For now this includes:
 /// * `col(colname)` to get the reference to a certain column
 /// * `loc(key, colname)` to get the reference to a certain cell
-pub trait DataFrame {
+pub trait DataFrame<'a, T: 'a> {
     /// Returns a reference to the column `column`.
-    fn col<'a>(&self, column: &str) -> &DataVector;
+    fn col(&self, column: &str) -> &DataVector<T>;
+    
+    fn move_col(&mut self, column: &str) -> DataVector<T>;
 
     /// Returns a DataView to the cell at column `column` and index `key`.
-    fn loc<'a, Key>(&self, key: Key, column: &str) -> DataView
+    fn loc<Key>(&self, key: Key, column: &str) -> DataView<T>
     where
         Key: Into<Indexer<'a>>;
 
     /// Convenience function for accessing a real number cell. Will panic if anything goes wrong
     /// (the cell doesn't exist, it is not a real number etc.)
-    fn loc_real<'a, Key>(&self, key: Key, column: &str) -> &f64
+    fn loc_real<Key>(&self, key: Key, column: &str) -> &T
     where
         Key: Into<Indexer<'a>>,
     {
@@ -31,7 +37,7 @@ pub trait DataFrame {
 
     /// Convenience function for accessing a text cell. Will panic if anything goes wrong
     /// (the cell doesn't exist, it is not a text etc.)
-    fn loc_text<'a, Key>(&self, key: Key, column: &str) -> &String
+    fn loc_text<Key>(&'a self, key: Key, column: &str) -> &'a String
     where
         Key: Into<Indexer<'a>>,
     {
@@ -42,18 +48,26 @@ pub trait DataFrame {
         }
     }
 
-    fn col_real<'a>(&self, column: &str) -> &Vec<f64> {
+    fn col_real(&'a self, column: &str) -> &'a Vec<T> {
         if let DataVector::RealVector(v) = self.col(column) {
             v
         } else {
             panic!("couldn't find the data column")
         }
     }
-    fn col_text<'a>(&self, column: &str) -> &Vec<String> {
+    fn col_text(&'a self, column: &str) -> &'a Vec<String> {
         if let DataVector::TextVector(v) = self.col(column) {
             &v
         } else {
             panic!("couldn't find the data column")
+        }
+    }
+
+    fn move_col_real(&mut self, column: &str) -> Vec<T> {
+        if let DataVector::RealVector(v) = self.move_col(column) {
+            v
+        } else {
+            panic!("couldn't find the column")
         }
     }
 }
@@ -95,20 +109,30 @@ impl<'a> From<u32> for Indexer<'a> {
     }
 }
 
-pub enum DataValue {
+#[derive(Debug)]
+pub enum DataValue<T> {
     Text(String),
-    Real(f64),
+    Real(T),
     //Complex(c128),
+}
+
+impl<T: fmt::Display> fmt::Display for DataValue<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            DataValue::Text(s) => write!(f, "'{}'", s),
+            DataValue::Real(r) => write!(f, "{}", r),
+        }
+    }
 }
 
 #[derive(Debug)]
-pub enum DataView<'a> {
+pub enum DataView<'a, T> {
     Text(&'a String),
-    Real(&'a f64),
+    Real(&'a T),
     //Complex(c128),
 }
 
-impl<'a> Display for DataView<'a> {
+impl<'a, T: Display> Display for DataView<'a, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         use DataView::*;
         match self {
@@ -118,7 +142,7 @@ impl<'a> Display for DataView<'a> {
     }
 }
 
-impl Into<String> for DataValue {
+impl<T> Into<String> for DataValue<T> {
     fn into(self) -> String {
         if let DataValue::Text(t) = self {
             t
@@ -128,17 +152,35 @@ impl Into<String> for DataValue {
     }
 }
 
-impl Into<f64> for DataValue {
-    fn into(self) -> f64 {
-        if let DataValue::Real(r) = self {
-            r
-        } else {
-            panic!("The data value is not a real number");
+macro_rules! impl_data_into {
+    ($a:ident) => {
+        impl<T: Into<$a>> Into<$a> for DataValue<T> {
+            fn into(self) -> $a  {
+                if let DataValue::Real(r) = self {
+                    r.into()
+                }
+                else {
+                    panic!("The data value is not a real value")
+                }
+            }
         }
-    }
+    };
 }
 
-impl<'a> Into<&'a String> for DataView<'a> {
+impl_data_into!(f64);
+impl_data_into!(f32);
+
+//impl<T: Into<f64>> Into<f64> for DataValue<T> {
+//    fn into(self) -> f64 {
+//        if let DataValue::Real(r) = self {
+//            r.into()
+//        } else {
+//            panic!("The data value is not a real number");
+//        }
+//    }
+//}
+
+impl<'a, T> Into<&'a String> for DataView<'a, T> {
     fn into(self) -> &'a String {
         if let DataView::Text(t) = self {
             t
@@ -148,10 +190,10 @@ impl<'a> Into<&'a String> for DataView<'a> {
     }
 }
 
-impl<'a> Into<&'a f64> for DataView<'a> {
-    fn into(self) -> &'a f64 {
+impl<'a, T: Copy + Into<f64>> Into<f64> for DataView<'a, T> {
+    fn into(self) -> f64 {
         if let DataView::Real(r) = self {
-            r
+            (*r).into()
         } else {
             panic!("The data value is not a real number");
         }
@@ -160,22 +202,41 @@ impl<'a> Into<&'a f64> for DataView<'a> {
 
 /// The columns of a data frame are stored in `DataVector`s.
 #[derive(PartialEq)]
-pub enum DataVector {
+pub enum DataVector<T> {
     TextVector(Vec<String>),
-    RealVector(Vec<f64>),
+    RealVector(Vec<T>),
 }
 
-impl<'a> Into<&'a Vec<f64>> for &'a DataVector {
-    fn into(self) -> &'a Vec<f64> {
-        if let DataVector::RealVector(v) = self {
-            &v
-        } else {
-            panic!("not a RealVector")
+//impl<'a, T> Into<&'a Vec<T>> for &'a DataVector<T> {
+//    fn into(self) -> &'a Vec<T> {
+//        if let DataVector::RealVector(v) = self {
+//            &v
+//        } else {
+//            panic!("not a RealVector")
+//        }
+//    }
+//}
+//
+
+macro_rules! impl_datavec_into {
+    ($a:ident) => {
+        impl<'a> Into<&'a Vec<$a>> for &'a DataVector<$a> {
+            fn into(self) -> &'a Vec<$a>  {
+                if let DataVector::RealVector(v) = self {
+                    &v
+                }
+                else {
+                    panic!("The data value is not a real value")
+                }
+            }
         }
-    }
+    };
 }
 
-impl<'a> Into<&'a Vec<String>> for &'a DataVector {
+impl_datavec_into!(f64);
+impl_datavec_into!(f32);
+
+impl<'a, T> Into<&'a Vec<String>> for &'a DataVector<T> {
     fn into(self) -> &'a Vec<String> {
         if let DataVector::TextVector(v) = self {
             &v
@@ -185,8 +246,8 @@ impl<'a> Into<&'a Vec<String>> for &'a DataVector {
     }
 }
 
-impl<'a> Add for &'a DataVector {
-    type Output = DataVector;
+impl<'a, T: Copy + Add + From<<T as Add>::Output>> Add for &'a DataVector<T> {
+    type Output = DataVector<T>;
 
     /// Implementation for Addition of two `DataVector`s.
     /// Yields element-wise addition of the two Vectors if they are both `DataVector::RealVector`.
@@ -202,14 +263,14 @@ impl<'a> Add for &'a DataVector {
     ///
     /// assert_eq!(c, test_c);
     /// ```
-    fn add(self, other: &'a DataVector) -> DataVector {
+    fn add(self, other: &'a DataVector<T>) -> DataVector<T> {
         if let &DataVector::RealVector(ref a) = self {
             if let &DataVector::RealVector(ref b) = other {
                 DataVector::RealVector(
                     a.iter()
                         .zip(b.iter())
-                        .map(|(x, y)| x + y)
-                        .collect::<Vec<f64>>(),
+                        .map(|(x, y)| T::from(*x + *y))
+                        .collect::<Vec<T>>(),
                 )
             } else {
                 panic!("rhs has to be data")
@@ -220,8 +281,8 @@ impl<'a> Add for &'a DataVector {
     }
 }
 
-impl<'a> Sub for &'a DataVector {
-    type Output = DataVector;
+impl<'a, T: Copy + Sub + From<<T as Sub>::Output>> Sub for &'a DataVector<T> {
+    type Output = DataVector<T>;
 
     /// Implementation for Subtraction of two `DataVector`s.
     /// ```
@@ -232,15 +293,15 @@ impl<'a> Sub for &'a DataVector {
     ///
     /// let c = &a - &b;
     /// ```
-    fn sub(self, other: &'a DataVector) -> DataVector {
+    fn sub(self, other: &'a DataVector<T>) -> DataVector<T> {
         if let &DataVector::RealVector(ref a) = self {
             if let &DataVector::RealVector(ref b) = other {
                 if a.len() == b.len() {
                     DataVector::RealVector(
                         a.iter()
                             .zip(b.iter())
-                            .map(|(x, y)| x - y)
-                            .collect::<Vec<f64>>(),
+                            .map(|(x, y)| T::from(*x - *y))
+                            .collect::<Vec<T>>(),
                     )
                 } else {
                     panic!("Vectors have to have the same length")
@@ -254,20 +315,20 @@ impl<'a> Sub for &'a DataVector {
     }
 }
 
-impl Debug for DataVector {
+impl<T: Debug> Debug for DataVector<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             DataVector::RealVector(v) => {
                 write!(f, "RealVector[{}] {{ ", v.len())?;
                 for i in 0..v.len().min(5) {
-                    write!(f, "{}, ", v[i])?;
+                    write!(f, "{:?}, ", v[i])?;
                 }
                 write!(f, "}}")?;
             }
             DataVector::TextVector(v) => {
                 write!(f, "TextVector[{}] {{ ", v.len())?;
                 for i in 0..v.len().min(5) {
-                    write!(f, "'{}', ", v[i])?;
+                    write!(f, "'{:?}', ", v[i])?;
                 }
                 write!(f, "}}")?;
             }

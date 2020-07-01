@@ -4,6 +4,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
+use std::fmt;
+
 /// The main struct of the crate. `TfsDataFrame` contains all the information of the loaded TFS file.
 ///
 /// # TFS file structure
@@ -43,29 +45,31 @@ use std::path::Path;
 /// And finally, data rows just contain a whitespace separated list of the values for the respective columns.
 ///
 /// ` ELEMENT1 0.0 ...`
-pub struct TfsDataFrame {
-    columns: Vec<DataVector>,
+pub struct TfsDataFrame<T: std::str::FromStr> {
+    columns: Vec<DataVector<T>>,
     column_headers: HashMap<String, usize>,
-    properties: HashMap<String, DataValue>,
+    pub properties: HashMap<String, DataValue<T>>,
     index_str: HashMap<String, usize>,
     colnames: Vec<String>,
     coltypes: Vec<String>,
 }
 
-impl TfsDataFrame {
+impl<T: std::str::FromStr> TfsDataFrame<T> {
     /// Opens a tfs file and stores the conten in a TfsDataFrame. Will panic! if opening fails rather
     /// than return a `Result<>`.~
-    pub fn open_expect<P>(path: P) -> TfsDataFrame
+    pub fn open_expect<P>(path: P) -> TfsDataFrame<T>
     where
         P: AsRef<Path>,
+        <T as std::str::FromStr>::Err: std::fmt::Debug,
     {
         TfsDataFrame::open(path).expect("couldn't open the TFS file")
     }
 
     /// Opens a tfs file and stores the content in a TfsDataFrame.
-    pub fn open<P>(path: P) -> Result<TfsDataFrame, std::io::Error>
+    pub fn open<P>(path: P) -> Result<TfsDataFrame<T>, std::io::Error>
     where
         P: AsRef<Path>,
+        <T as std::str::FromStr>::Err: std::fmt::Debug,
     {
         let mut reader = BufReader::new(File::open(path.as_ref())?).lines();
 
@@ -170,7 +174,7 @@ impl TfsDataFrame {
     }
 
     /// Returns the property `key` from the header if it is a data value, otherwise it panics.
-    pub fn propd(&self, key: &str) -> &f64 {
+    pub fn propd(&self, key: &str) -> &T {
         if let DataValue::Real(ref v) = self.properties[key] {
             return v;
         }
@@ -190,18 +194,29 @@ impl TfsDataFrame {
             key
         );
     }
+
+    pub fn column_count(&self) -> usize {
+        self.column_headers.len()
+    }
 }
 
-impl DataFrame for TfsDataFrame {
-    fn col<'a>(&self, column: &str) -> &DataVector {
+impl<'a, T: 'a + std::str::FromStr> DataFrame<'a, T> for TfsDataFrame<T> {
+    fn col(&self, column: &str) -> &DataVector<T> {
         &self.columns[self
             .column_headers
             .get(column)
             .expect(&format!("column {} not in dataframe", column))
             .clone()]
     }
+    fn move_col(&mut self, column: &str) -> DataVector<T> {
+        self.columns.remove(self
+            .column_headers
+            .get(column)
+            .expect(&format!("column {} not in dataframe", column))
+            .clone())
+    }
 
-    fn loc<'a, Key>(&self, key: Key, column: &str) -> DataView
+    fn loc<Key>(&self, key: Key, column: &str) -> DataView<T>
     where
         Key: Into<Indexer<'a>>,
     {
@@ -216,5 +231,31 @@ impl DataFrame for TfsDataFrame {
             RealVector(v) => DataView::Real(&v[idx]),
             TextVector(v) => DataView::Text(&v[idx]),
         }
+    }
+}
+
+impl<T: fmt::Debug + std::str::FromStr> fmt::Debug for TfsDataFrame<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("TfsDataFrame [{} rows]{{\n", self.len()))?;
+        f.write_str("Header: \n")?;
+        f.debug_map().entries(&self.properties).finish()?;
+        f.write_str("\nColumns:\n")?;
+        f.debug_map().entries(&self.column_headers).finish()?;
+        f.write_str("\n}")
+    }
+}
+
+impl<T: fmt::Display + std::str::FromStr> fmt::Display for TfsDataFrame<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("TfsDataFrame [{} rows] {{\n", self.len()))?;
+        write!(f, "Header [{}]: \n", self.properties.len())?;
+        for k in &self.properties {
+            writeln!(f, "  {:32}: {:24}", k.0, k.1)?;
+        }
+        write!(f, "Columns [{}]:\n", self.columns.len())?;
+        for c in &self.column_headers {
+            writeln!(f, "  {1:5} {0:12}", c.0, self.coltypes[*c.1])?;
+        }
+        f.write_str("}\n")
     }
 }
