@@ -1,4 +1,4 @@
-use crate::dataframe::{DataFrame, DataValue, DataVector, DataView, Indexer};
+use crate::dataframe::{DataValue, DataVector, DataView, Indexer};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -140,17 +140,17 @@ impl<T: std::str::FromStr> TfsDataFrame<T> {
     /// The index has to be set for [`loc`](#method.locd) to work.
     ///
     /// ```
-    /// use tfs::{DataFrame, TfsDataFrame};
+    /// use tfs::{TfsDataFrame};
     ///
-    /// let mut df = TfsDataFrame::open("test/test.tfs").expect("unable to open file");
-    ///
-    /// // works always, indexing using an integer, will acces the nth value according to the order
-    /// // in the original file
-    /// let betx1 = df.loc_real(0, "BETX").clone();
+    /// let mut df: TfsDataFrame<f32> = TfsDataFrame::open("test/test.tfs").expect("unable to open file");
     ///
     /// // only after a first invocation of `set_index` access by the index will be possible
     /// df.set_index("NAME");
-    /// let betx2 = df.loc_real("BPM1", "BETX").clone();
+    ///
+    /// // works always, indexing using an integer, will acces the nth value according to the order
+    /// // in the original file
+    /// let betx1 = df.loc_real(0, "BETX").unwrap();
+    /// let betx2 = df.loc_real("BPM1", "BETX").unwrap();
     ///
     /// assert_eq!(betx1, betx2);
     /// ```
@@ -200,15 +200,16 @@ impl<T: std::str::FromStr> TfsDataFrame<T> {
     }
 }
 
-impl<'a, T: 'a + std::str::FromStr> DataFrame<'a, T> for TfsDataFrame<T> {
-    fn col(&self, column: &str) -> &DataVector<T> {
+impl<T> TfsDataFrame<T>
+where T: std::str::FromStr {
+    pub fn col(&self, column: &str) -> &DataVector<T> {
         &self.columns[self
             .column_headers
             .get(column)
             .expect(&format!("column {} not in dataframe", column))
             .clone()]
     }
-    fn move_col(&mut self, column: &str) -> DataVector<T> {
+    pub fn move_col(&mut self, column: &str) -> DataVector<T> {
         self.columns.remove(self
             .column_headers
             .get(column)
@@ -216,7 +217,7 @@ impl<'a, T: 'a + std::str::FromStr> DataFrame<'a, T> for TfsDataFrame<T> {
             .clone())
     }
 
-    fn loc<Key>(&self, key: Key, column: &str) -> DataView<T>
+    pub fn loc<'a, Key>(&self, key: Key, column: &'a str) -> DataView<T>
     where
         Key: Into<Indexer<'a>>,
     {
@@ -230,6 +231,21 @@ impl<'a, T: 'a + std::str::FromStr> DataFrame<'a, T> for TfsDataFrame<T> {
         match col {
             RealVector(v) => DataView::Real(&v[idx]),
             TextVector(v) => DataView::Text(&v[idx]),
+        }
+    }
+
+    pub fn loc_real<'a, Key>(&self, key: Key, column: &'a str) -> Option<&T>
+    where Key: Into<Indexer<'a>> {
+        match self.loc(key, column) {
+            DataView::Real(r) => Some(r),
+            DataView::Text(t) => None,
+        }
+    }
+    pub fn loc_text<'a, Key>(&self, key: Key, column: &'a str) -> Option<&str>
+    where Key: Into<Indexer<'a>> {
+        match self.loc(key, column) {
+            DataView::Real(r) => None,
+            DataView::Text(t) => Some(t),
         }
     }
 }

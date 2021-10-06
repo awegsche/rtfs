@@ -24,13 +24,13 @@ mod tests {
     use super::*;
     #[test]
     fn loading() {
-        assert!(TfsDataFrame::open("not_there").is_err());
+        assert!(TfsDataFrame::<f32>::open("not_there").is_err());
 
-        assert!(TfsDataFrame::open("test/test.tfs").is_ok());
+        assert!(TfsDataFrame::<f32>::open("test/test.tfs").is_ok());
     }
 
     #[test]
     fn load_all_data() {
-        assert_eq!(TfsDataFrame::open_expect("test/test.tfs").len(), 5);
+        assert_eq!(TfsDataFrame::<f32>::open_expect("test/test.tfs").len(), 5);
     }
 }

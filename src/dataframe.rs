@@ -5,73 +5,6 @@ use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Add, Div, Mul, Sub};
 
-
-/// The necessary functions to implement for any DataFrame object.
-///
-/// For now this includes:
-/// * `col(colname)` to get the reference to a certain column
-/// * `loc(key, colname)` to get the reference to a certain cell
-pub trait DataFrame<'a, T: 'a> {
-    /// Returns a reference to the column `column`.
-    fn col(&self, column: &str) -> &DataVector<T>;
-    
-    fn move_col(&mut self, column: &str) -> DataVector<T>;
-
-    /// Returns a DataView to the cell at column `column` and index `key`.
-    fn loc<Key>(&self, key: Key, column: &str) -> DataView<T>
-    where
-        Key: Into<Indexer<'a>>;
-
-    /// Convenience function for accessing a real number cell. Will panic if anything goes wrong
-    /// (the cell doesn't exist, it is not a real number etc.)
-    fn loc_real<Key>(&self, key: Key, column: &str) -> &T
-    where
-        Key: Into<Indexer<'a>>,
-    {
-        if let DataView::Real(ref v) = self.loc(key, column) {
-            v
-        } else {
-            panic!("couldn't find the value");
-        }
-    }
-
-    /// Convenience function for accessing a text cell. Will panic if anything goes wrong
-    /// (the cell doesn't exist, it is not a text etc.)
-    fn loc_text<Key>(&'a self, key: Key, column: &str) -> &'a String
-    where
-        Key: Into<Indexer<'a>>,
-    {
-        if let DataView::Text(ref v) = self.loc(key, column) {
-            v
-        } else {
-            panic!("couldn't find the value");
-        }
-    }
-
-    fn col_real(&'a self, column: &str) -> &'a Vec<T> {
-        if let DataVector::RealVector(v) = self.col(column) {
-            v
-        } else {
-            panic!("couldn't find the data column")
-        }
-    }
-    fn col_text(&'a self, column: &str) -> &'a Vec<String> {
-        if let DataVector::TextVector(v) = self.col(column) {
-            &v
-        } else {
-            panic!("couldn't find the data column")
-        }
-    }
-
-    fn move_col_real(&mut self, column: &str) -> Vec<T> {
-        if let DataVector::RealVector(v) = self.move_col(column) {
-            v
-        } else {
-            panic!("couldn't find the column")
-        }
-    }
-}
-
 /// Helps deciding if we access by key (a valid String index has to be setup with `set_index`) or
 /// by an integer index
 pub enum Indexer<'a> {
@@ -155,11 +88,10 @@ impl<T> Into<String> for DataValue<T> {
 macro_rules! impl_data_into {
     ($a:ident) => {
         impl<T: Into<$a>> Into<$a> for DataValue<T> {
-            fn into(self) -> $a  {
+            fn into(self) -> $a {
                 if let DataValue::Real(r) = self {
                     r.into()
-                }
-                else {
+                } else {
                     panic!("The data value is not a real value")
                 }
             }
@@ -221,11 +153,10 @@ pub enum DataVector<T> {
 macro_rules! impl_datavec_into {
     ($a:ident) => {
         impl<'a> Into<&'a Vec<$a>> for &'a DataVector<$a> {
-            fn into(self) -> &'a Vec<$a>  {
+            fn into(self) -> &'a Vec<$a> {
                 if let DataVector::RealVector(v) = self {
                     &v
-                }
-                else {
+                } else {
                     panic!("The data value is not a real value")
                 }
             }
@@ -246,7 +177,10 @@ impl<'a, T> Into<&'a Vec<String>> for &'a DataVector<T> {
     }
 }
 
-impl<'a, T: Copy + Add + From<<T as Add>::Output>> Add for &'a DataVector<T> {
+impl<'a, T> Add for &'a DataVector<T>
+where
+    T: Copy + Add + From<<T as Add>::Output>,
+{
     type Output = DataVector<T>;
 
     /// Implementation for Addition of two `DataVector`s.
@@ -281,7 +215,10 @@ impl<'a, T: Copy + Add + From<<T as Add>::Output>> Add for &'a DataVector<T> {
     }
 }
 
-impl<'a, T: Copy + Sub + From<<T as Sub>::Output>> Sub for &'a DataVector<T> {
+impl<'a, T> Sub for &'a DataVector<T>
+where
+    T: Copy + Sub + From<<T as Sub>::Output>,
+{
     type Output = DataVector<T>;
 
     /// Implementation for Subtraction of two `DataVector`s.
