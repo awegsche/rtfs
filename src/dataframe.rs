@@ -1,6 +1,4 @@
-extern crate num_traits;
 
-use num_traits::Float;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Add, Div, Mul, Sub};

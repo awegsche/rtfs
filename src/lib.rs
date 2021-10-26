@@ -10,8 +10,6 @@
 //! - The dataframe namespace (see below) contains a very general trait `DataFrame` that has to be implemented
 //! by all dataframe-like objects.
 pub mod dataframe;
-pub mod join;
-pub mod numerical;
 pub mod tfsdataframe;
 
 pub use dataframe::*;

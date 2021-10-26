@@ -1,3 +1,5 @@
+use polars::prelude::*;
+
 use crate::dataframe::{DataValue, DataVector, DataView, Indexer};
 use std::collections::HashMap;
 use std::fs::File;
@@ -6,52 +8,15 @@ use std::path::Path;
 
 use std::fmt;
 
-/// The main struct of the crate. `TfsDataFrame` contains all the information of the loaded TFS file.
-///
-/// # TFS file structure
-///
-/// ## Properties
-///
-/// The first lines are a set of properties of the form
-///
-/// `
-/// @ PROPERTY_NAME <type-id> value
-/// `
-///
-/// where `<type-id>` is one of
-///
-/// | type id | type of data |
-/// | --- |--- |
-/// | `%le` | float |
-/// |  `%s`| string |    
-/// |  `%d`| int      |
-///
-///
-/// ## Header
-///
-/// The column header contains of two lines, the first giving the names of the columns and the second
-/// one the data types.
-///
-/// The column name row begins with an asterisk (`*`):
-///
-/// `* NAME POSITION col3 ...`
-///
-/// The data type row begins with a dollar symbol (`$`):
-///
-/// `$ %s %le ...`
-///
-/// ## Data
-///
-/// And finally, data rows just contain a whitespace separated list of the values for the respective columns.
-///
-/// ` ELEMENT1 0.0 ...`
+/// `TfsDataFrame` is a wrapper around `polars::DataFrame` that supports the `TFS` format.
+/// A TFS file consists of a list of properties (key - value pairs) followed by a chunk of data
+/// in tabular format.
+/// 
+/// The following example loads a temporary tfs file into memory and prints its data:
+/// 
 pub struct TfsDataFrame<T: std::str::FromStr> {
-    columns: Vec<DataVector<T>>,
-    column_headers: HashMap<String, usize>,
     pub properties: HashMap<String, DataValue<T>>,
-    index_str: HashMap<String, usize>,
-    colnames: Vec<String>,
-    coltypes: Vec<String>,
+    df: DataFrame,
 }
 
 impl<T: std::str::FromStr> TfsDataFrame<T> {
@@ -66,61 +31,56 @@ impl<T: std::str::FromStr> TfsDataFrame<T> {
     }
 
     /// Opens a tfs file and stores the content in a TfsDataFrame.
-    pub fn open<P>(path: P) -> Result<TfsDataFrame<T>, std::io::Error>
+    pub fn open<P>(path: P) -> Result<TfsDataFrame<T>>
     where
         P: AsRef<Path>,
         <T as std::str::FromStr>::Err: std::fmt::Debug,
     {
         let mut reader = BufReader::new(File::open(path.as_ref())?).lines();
 
-        let mut df = TfsDataFrame {
-            columns: Vec::new(),
-            column_headers: HashMap::new(),
-            properties: HashMap::new(),
-            index_str: HashMap::new(),
-            colnames: Vec::new(),
-            coltypes: Vec::new(),
-        };
+        let mut properties =  HashMap::new();
+        let mut colnames = vec![];
+        let mut coltypes = vec![];
 
         loop {
             let line = reader.next().unwrap().unwrap();
             let mut line_it = line.split_whitespace();
 
             match line_it.next().unwrap() {
-                "*" => df.colnames.extend(line_it.map(|x| String::from(x))),
-                "$" => df.coltypes.extend(line_it.map(|x| String::from(x))),
+                "*" => colnames.extend(line_it.map(|x| String::from(x))),
+                "$" => coltypes.extend(line_it.map(|x| String::from(x))),
                 "@" => {
                     let name = String::from(line_it.next().unwrap());
                     match line_it.next().unwrap() {
-                        "%le" => df.properties.insert(
+                        "%le" => properties.insert(
                             name,
                             DataValue::Real(line_it.next().unwrap().parse().unwrap()),
                         ),
-                        _ => df
-                            .properties
+                        _ => properties
                             .insert(name, DataValue::Text(line_it.collect())),
                     };
                 }
                 _ => {}
             }
-            if df.colnames.len() > 0 && df.coltypes.len() > 0 {
+            if colnames.len() > 0 && coltypes.len() > 0 {
                 break; // we have parsed the header, pass on to reading the data lines
             }
         }
 
+        let mut columns: Vec<DataVector<f32>> = vec![];
+
         // setup columns
-        for (ia, ib) in df.colnames.iter().zip(df.coltypes.iter()) {
-            df.column_headers.insert(String::from(ia), df.columns.len());
+        for (ia, ib) in colnames.iter().zip(coltypes.iter()) {
             match ib.as_ref() {
-                "%le" => df.columns.push(DataVector::RealVector(Vec::new())),
-                _ => df.columns.push(DataVector::TextVector(Vec::new())),
+                "%le" => columns.push(DataVector::RealVector(Vec::new())),
+                _ => columns.push(DataVector::TextVector(Vec::new())),
             };
         }
 
         for line in reader {
             if let Ok(l) = line {
                 let line_it = l.split_whitespace();
-                for (idata, icolumn) in line_it.into_iter().zip(df.columns.iter_mut()) {
+                for (idata, icolumn) in line_it.into_iter().zip(columns.iter_mut()) {
                     match icolumn {
                         DataVector::RealVector(ref mut vec) => vec.push((*idata).parse().unwrap()),
                         DataVector::TextVector(ref mut vec) => {
@@ -131,46 +91,26 @@ impl<T: std::str::FromStr> TfsDataFrame<T> {
             }
         }
 
-        Ok(df)
-    }
+        let mut serieses: Vec<Series> = vec![];
 
-    /// Sets the index to the specified column. The column has to be a String column. `f64` does
-    /// not implement `Eq` so it cannot be used as hash key.
-    ///
-    /// The index has to be set for [`loc`](#method.locd) to work.
-    ///
-    /// ```
-    /// use tfs::{TfsDataFrame};
-    ///
-    /// let mut df: TfsDataFrame<f32> = TfsDataFrame::open("test/test.tfs").expect("unable to open file");
-    ///
-    /// // only after a first invocation of `set_index` access by the index will be possible
-    /// df.set_index("NAME");
-    ///
-    /// // works always, indexing using an integer, will acces the nth value according to the order
-    /// // in the original file
-    /// let betx1 = df.loc_real(0, "BETX").unwrap();
-    /// let betx2 = df.loc_real("BPM1", "BETX").unwrap();
-    ///
-    /// assert_eq!(betx1, betx2);
-    /// ```
-    pub fn set_index(&mut self, column: &str) -> &mut Self {
-        self.index_str.clear();
-        if let DataVector::TextVector(vec) = &self.columns[self.column_headers[column]] {
-            for i in 0..vec.len() {
-                self.index_str.insert(vec[i].clone(), i);
-            }
-        } else {
-            panic!("column not in the df");
+        for (name, column) in colnames.iter().zip(columns) {
+            match column {
+                DataVector::TextVector(v) => serieses.push(Series::new(name, &v)),
+                DataVector::RealVector(v) => serieses.push(Series::new(name, &v)),
+
+            };
         }
-        self
+
+         
+        Ok(TfsDataFrame {
+            properties,
+            df: DataFrame::new(serieses)?
+        })
+
     }
 
     pub fn len(&self) -> usize {
-        match &self.columns[0] {
-            DataVector::TextVector(v) => v.len(),
-            DataVector::RealVector(v) => v.len(),
-        }
+        self.df.height()
     }
 
     /// Returns the property `key` from the header if it is a data value, otherwise it panics.
@@ -196,57 +136,15 @@ impl<T: std::str::FromStr> TfsDataFrame<T> {
     }
 
     pub fn column_count(&self) -> usize {
-        self.column_headers.len()
-    }
-}
-
-impl<T> TfsDataFrame<T>
-where T: std::str::FromStr {
-    pub fn col(&self, column: &str) -> &DataVector<T> {
-        &self.columns[self
-            .column_headers
-            .get(column)
-            .expect(&format!("column {} not in dataframe", column))
-            .clone()]
-    }
-    pub fn move_col(&mut self, column: &str) -> DataVector<T> {
-        self.columns.remove(self
-            .column_headers
-            .get(column)
-            .expect(&format!("column {} not in dataframe", column))
-            .clone())
+        self.df.width()
     }
 
-    pub fn loc<'a, Key>(&self, key: Key, column: &'a str) -> DataView<T>
-    where
-        Key: Into<Indexer<'a>>,
-    {
-        use DataVector::*;
-        let col = self.col(column);
-        let idx = match key.into() {
-            Indexer::Index(i) => i,
-            Indexer::Key(k) => self.index_str[k],
-        };
-
-        match col {
-            RealVector(v) => DataView::Real(&v[idx]),
-            TextVector(v) => DataView::Text(&v[idx]),
-        }
+    pub fn column(&self, name: &str) -> anyhow::Result<&Series> {
+        Ok(self.df.column(name)?)
     }
 
-    pub fn loc_real<'a, Key>(&self, key: Key, column: &'a str) -> Option<&T>
-    where Key: Into<Indexer<'a>> {
-        match self.loc(key, column) {
-            DataView::Real(r) => Some(r),
-            DataView::Text(t) => None,
-        }
-    }
-    pub fn loc_text<'a, Key>(&self, key: Key, column: &'a str) -> Option<&str>
-    where Key: Into<Indexer<'a>> {
-        match self.loc(key, column) {
-            DataView::Real(r) => None,
-            DataView::Text(t) => Some(t),
-        }
+    pub fn df(&self) -> &DataFrame {
+        &self.df
     }
 }
 
@@ -255,8 +153,7 @@ impl<T: fmt::Debug + std::str::FromStr> fmt::Debug for TfsDataFrame<T> {
         f.write_fmt(format_args!("TfsDataFrame [{} rows]{{\n", self.len()))?;
         f.write_str("Header: \n")?;
         f.debug_map().entries(&self.properties).finish()?;
-        f.write_str("\nColumns:\n")?;
-        f.debug_map().entries(&self.column_headers).finish()?;
+        write!(f, "{:?}", self.df)?;
         f.write_str("\n}")
     }
 }
@@ -268,10 +165,6 @@ impl<T: fmt::Display + std::str::FromStr> fmt::Display for TfsDataFrame<T> {
         for k in &self.properties {
             writeln!(f, "  {:32}: {:24}", k.0, k.1)?;
         }
-        write!(f, "Columns [{}]:\n", self.columns.len())?;
-        for c in &self.column_headers {
-            writeln!(f, "  {1:5} {0:12}", c.0, self.coltypes[*c.1])?;
-        }
-        f.write_str("}\n")
+        write!(f, "{}", self.df)
     }
 }
