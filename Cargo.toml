@@ -2,11 +2,11 @@
 name = "tfs"
 version = "0.1.0"
 authors = ["awegsche <a.wegscheider7141@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lazy_static = "1.4.0"
+lazy_static = "*"
 polars = "*"
 anyhow = "*"
