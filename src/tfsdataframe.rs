@@ -1,4 +1,5 @@
-use polars::prelude::*;
+use polars::prelude::{DataFrame, NamedFrom, NumericNative, PolarsError};
+use polars::series::Series;
 
 use crate::dataframe::{DataValue, DataVector, DataView, Indexer};
 use std::collections::HashMap;
@@ -11,16 +12,16 @@ use std::fmt;
 /// `TfsDataFrame` is a wrapper around `polars::DataFrame` that supports the `TFS` format.
 /// A TFS file consists of a list of properties (key - value pairs) followed by a chunk of data
 /// in tabular format.
-/// 
+///
 /// The following example loads a temporary tfs file into memory and prints its data:
-/// 
-pub struct TfsDataFrame<T: std::str::FromStr> {
+///
+pub struct TfsDataFrame<T: std::str::FromStr + polars::prelude::NumericNative> {
     pub properties: HashMap<String, DataValue<T>>,
     df: DataFrame,
 }
 
-impl<T: std::str::FromStr> TfsDataFrame<T> {
-    /// Opens a tfs file and stores the conten in a TfsDataFrame. Will panic! if opening fails rather
+impl<T: std::str::FromStr + NumericNative> TfsDataFrame<T> {
+    /// Opens a tfs file and stores the content in a TfsDataFrame. Will panic! if opening fails rather
     /// than return a `Result<>`.~
     pub fn open_expect<P>(path: P) -> TfsDataFrame<T>
     where
@@ -31,14 +32,14 @@ impl<T: std::str::FromStr> TfsDataFrame<T> {
     }
 
     /// Opens a tfs file and stores the content in a TfsDataFrame.
-    pub fn open<P>(path: P) -> Result<TfsDataFrame<T>>
+    pub fn open<P>(path: P) -> Result<TfsDataFrame<T>, PolarsError>
     where
         P: AsRef<Path>,
         <T as std::str::FromStr>::Err: std::fmt::Debug,
     {
         let mut reader = BufReader::new(File::open(path.as_ref())?).lines();
 
-        let mut properties =  HashMap::new();
+        let mut properties = HashMap::new();
         let mut colnames = vec![];
         let mut coltypes = vec![];
 
@@ -54,10 +55,15 @@ impl<T: std::str::FromStr> TfsDataFrame<T> {
                     match line_it.next().unwrap() {
                         "%le" => properties.insert(
                             name,
-                            DataValue::Real(line_it.next().unwrap().parse().unwrap()),
+                            DataValue::Real(
+                                line_it
+                                    .next()
+                                    .unwrap()
+                                    .parse()
+                                    .expect("should be a valid property"),
+                            ),
                         ),
-                        _ => properties
-                            .insert(name, DataValue::Text(line_it.collect())),
+                        _ => properties.insert(name, DataValue::Text(line_it.collect())),
                     };
                 }
                 _ => {}
@@ -67,7 +73,7 @@ impl<T: std::str::FromStr> TfsDataFrame<T> {
             }
         }
 
-        let mut columns: Vec<DataVector<f32>> = vec![];
+        let mut columns: Vec<DataVector<f64>> = vec![];
 
         // setup columns
         for (ia, ib) in colnames.iter().zip(coltypes.iter()) {
@@ -82,7 +88,9 @@ impl<T: std::str::FromStr> TfsDataFrame<T> {
                 let line_it = l.split_whitespace();
                 for (idata, icolumn) in line_it.into_iter().zip(columns.iter_mut()) {
                     match icolumn {
-                        DataVector::RealVector(ref mut vec) => vec.push((*idata).parse().unwrap()),
+                        DataVector::RealVector(ref mut vec) => {
+                            vec.push((*idata).parse().unwrap_or(f64::NAN))
+                        }
                         DataVector::TextVector(ref mut vec) => {
                             vec.push(String::from(idata).trim_matches('\"').to_owned())
                         }
@@ -96,17 +104,14 @@ impl<T: std::str::FromStr> TfsDataFrame<T> {
         for (name, column) in colnames.iter().zip(columns) {
             match column {
                 DataVector::TextVector(v) => serieses.push(Series::new(name, &v)),
-                DataVector::RealVector(v) => serieses.push(Series::new(name, &v)),
-
+                DataVector::RealVector(v) => serieses.push(Series::new(name, v)),
             };
         }
 
-         
         Ok(TfsDataFrame {
             properties,
-            df: DataFrame::new(serieses)?
+            df: DataFrame::new(serieses)?,
         })
-
     }
 
     pub fn len(&self) -> usize {
@@ -148,7 +153,7 @@ impl<T: std::str::FromStr> TfsDataFrame<T> {
     }
 }
 
-impl<T: fmt::Debug + std::str::FromStr> fmt::Debug for TfsDataFrame<T> {
+impl<T: fmt::Debug + std::str::FromStr + NumericNative> fmt::Debug for TfsDataFrame<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("TfsDataFrame [{} rows]{{\n", self.len()))?;
         f.write_str("Header: \n")?;
@@ -158,7 +163,7 @@ impl<T: fmt::Debug + std::str::FromStr> fmt::Debug for TfsDataFrame<T> {
     }
 }
 
-impl<T: fmt::Display + std::str::FromStr> fmt::Display for TfsDataFrame<T> {
+impl<T: fmt::Display + std::str::FromStr + NumericNative> fmt::Display for TfsDataFrame<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("TfsDataFrame [{} rows] {{\n", self.len()))?;
         write!(f, "Header [{}]: \n", self.properties.len())?;
